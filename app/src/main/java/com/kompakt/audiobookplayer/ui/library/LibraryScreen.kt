@@ -16,7 +16,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.kompakt.audiobookplayer.data.Audiobook
 import com.kompakt.audiobookplayer.ui.util.formatDuration
-import com.mudita.mmd.components.appbar.TopAppBarMMD
+import com.mudita.mmd.components.top_app_bar.TopAppBarMMD
 import com.mudita.mmd.components.buttons.ButtonMMD
 import com.mudita.mmd.components.text.TextMMD
 

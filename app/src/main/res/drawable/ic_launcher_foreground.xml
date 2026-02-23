@@ -1,0 +1,10 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Headphones icon - simple audiobook symbol -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M54,28 C40.7,28 30,38.7 30,52 L30,62 L30,68 C30,70.2 31.8,72 34,72 L40,72 C42.2,72 44,70.2 44,68 L44,58 C44,55.8 42.2,54 40,54 L36,54 L36,52 C36,42 44,34 54,34 C64,34 72,42 72,52 L72,54 L68,54 C65.8,54 64,55.8 64,58 L64,68 C64,70.2 65.8,72 68,72 L74,72 C76.2,72 78,70.2 78,68 L78,62 L78,52 C78,38.7 67.3,28 54,28 Z"/>
+</vector>

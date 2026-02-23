@@ -17,10 +17,10 @@ import com.kompakt.audiobookplayer.data.Chapter
 import com.kompakt.audiobookplayer.playback.PlaybackState
 import com.kompakt.audiobookplayer.ui.util.formatDuration
 import com.kompakt.audiobookplayer.ui.util.formatSpeed
-import com.mudita.mmd.components.appbar.TopAppBarMMD
+import com.mudita.mmd.components.top_app_bar.TopAppBarMMD
 import com.mudita.mmd.components.buttons.ButtonMMD
-import com.mudita.mmd.components.buttons.IconButtonMMD
 import com.mudita.mmd.components.text.TextMMD
+import androidx.compose.material3.IconButton
 
 /**
  * Main audiobook player screen, optimized for the Kompakt E Ink display.
@@ -65,7 +65,7 @@ fun PlayerScreen(
                 )
             },
             navigationIcon = {
-                IconButtonMMD(onClick = onBackClick) {
+                IconButton(onClick = onBackClick) {
                     TextMMD("←")
                 }
             }
@@ -186,12 +186,12 @@ private fun PlaybackControls(
         verticalAlignment = Alignment.CenterVertically
     ) {
         // Previous chapter
-        IconButtonMMD(onClick = onPreviousChapter) {
+        IconButton(onClick = onPreviousChapter) {
             TextMMD("⏮", fontWeight = FontWeight.Bold)
         }
 
         // Skip back 15s
-        IconButtonMMD(onClick = onSkipBackward) {
+        IconButton(onClick = onSkipBackward) {
             TextMMD("−15s", fontWeight = FontWeight.Medium)
         }
 
@@ -207,12 +207,12 @@ private fun PlaybackControls(
         }
 
         // Skip forward 30s
-        IconButtonMMD(onClick = onSkipForward) {
+        IconButton(onClick = onSkipForward) {
             TextMMD("+30s", fontWeight = FontWeight.Medium)
         }
 
         // Next chapter
-        IconButtonMMD(onClick = onNextChapter) {
+        IconButton(onClick = onNextChapter) {
             TextMMD("⏭", fontWeight = FontWeight.Bold)
         }
     }
@@ -275,7 +275,7 @@ fun ChapterListScreen(
         TopAppBarMMD(
             title = { TextMMD("Chapters", fontWeight = FontWeight.Bold) },
             navigationIcon = {
-                IconButtonMMD(onClick = onBackClick) {
+                IconButton(onClick = onBackClick) {
                     TextMMD("←")
                 }
             }
