@@ -79,6 +79,10 @@ private fun AppNavigation(
 ) {
     val navController = rememberNavController()
 
+    // Observe playback state for mini player
+    val playbackState by playerViewModel.playbackState.collectAsState()
+    val currentAudiobook by playerViewModel.audiobook.collectAsState()
+
     NavHost(
         navController = navController,
         startDestination = "library"
@@ -90,7 +94,18 @@ private fun AppNavigation(
                     playerViewModel.loadAudiobook(audiobookId)
                     navController.navigate("player/$audiobookId")
                 },
-                onAddClick = onAddAudiobook
+                onAddClick = onAddAudiobook,
+                onDeleteAudiobook = { audiobook ->
+                    libraryViewModel.deleteAudiobook(audiobook)
+                },
+                nowPlayingTitle = currentAudiobook?.title,
+                isPlaying = playbackState.isPlaying,
+                onPlayPauseClick = { playerViewModel.playPause() },
+                onMiniPlayerClick = {
+                    currentAudiobook?.id?.let { id ->
+                        navController.navigate("player/$id")
+                    }
+                }
             )
         }
 
