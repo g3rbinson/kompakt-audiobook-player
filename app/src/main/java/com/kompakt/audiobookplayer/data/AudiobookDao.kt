@@ -48,6 +48,15 @@ interface AudiobookDao {
     @Query("SELECT * FROM audiobooks")
     suspend fun getAllAudiobooksSync(): List<Audiobook>
 
+    @Query("SELECT * FROM audiobooks WHERE rootUri = :rootUri")
+    suspend fun getAudiobooksByRootUri(rootUri: String): List<Audiobook>
+
+    @Query("SELECT DISTINCT rootUri FROM audiobooks WHERE rootUri != ''")
+    suspend fun getDistinctRootUris(): List<String>
+
     @Delete
     suspend fun deleteAudiobook(audiobook: Audiobook)
+
+    @Delete
+    suspend fun deleteAudiobooks(audiobooks: List<Audiobook>)
 }

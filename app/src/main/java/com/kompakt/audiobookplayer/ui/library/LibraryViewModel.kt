@@ -14,6 +14,19 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 
+/**
+ * Hybrid audiobook import logic:
+ *
+ * When the user picks a folder, we scan it recursively:
+ *   - Each M4B/M4A file → its own audiobook (with embedded chapters)
+ *   - Regular audio files (MP3, FLAC…) in a folder → grouped as one audiobook
+ *   - Sub-folders are scanned recursively
+ *
+ * This naturally supports:
+ *   - A folder of M4B files (each = separate book)
+ *   - A folder of MP3 chapters (all = one book)
+ *   - Nested structures like Author/Series/Book/chapters.mp3
+ */
 class LibraryViewModel(application: Application) : AndroidViewModel(application) {
 
     private val db = AppDatabase.getInstance(application)
@@ -22,66 +35,149 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
 
     val audiobooks: Flow<List<Audiobook>> = audiobookDao.getAllAudiobooks()
 
+    private val audioExtensions = setOf("mp3", "m4a", "m4b", "ogg", "opus", "flac", "wav", "aac")
+    private val m4bExtensions = setOf("m4b", "m4a")
+
+    // ── Public API ──────────────────────────────────────────────────────
+
     /**
-     * Import or update an audiobook from a folder URI selected via SAF.
-     * If a book with the same folderUri already exists, its chapters are
-     * re-scanned (preserving playback progress). Otherwise a new entry is created.
+     * Import audiobooks from a folder picked via SAF.
+     * Discovers all audiobooks inside (including sub-folders) and upserts them.
+     * Books that previously existed under this root but are no longer found get removed.
      */
     fun importAudiobookFromFolder(folderUri: Uri) {
         viewModelScope.launch(Dispatchers.IO) {
-            syncFolder(folderUri)
+            scanRootFolder(folderUri)
         }
     }
 
     /**
-     * Re-scan every previously-imported folder so the library stays in sync
-     * with what's actually on disk. Call once on app startup.
+     * Re-scan every root folder so the library stays in sync with disk.
+     * Call once on app startup.
      */
     fun syncAllAudiobooks() {
         viewModelScope.launch(Dispatchers.IO) {
-            val allBooks = audiobookDao.getAllAudiobooksSync()
-            for (book in allBooks) {
+            val rootUris = audiobookDao.getDistinctRootUris()
+            for (rootUri in rootUris) {
                 try {
-                    syncFolder(Uri.parse(book.folderUri))
+                    scanRootFolder(Uri.parse(rootUri))
                 } catch (_: Exception) {
-                    // If folder is no longer accessible, leave the entry as-is
+                    // Folder no longer accessible — leave entries as-is
                 }
             }
         }
     }
 
+    fun deleteAudiobook(audiobook: Audiobook) {
+        viewModelScope.launch(Dispatchers.IO) {
+            audiobookDao.deleteAudiobook(audiobook)
+        }
+    }
+
+    // ── Scan logic ──────────────────────────────────────────────────────
+
     /**
-     * Core sync logic: reads the audio files inside [folderUri] and upserts
-     * the corresponding Audiobook + Chapter rows, preserving progress.
+     * Represents a discovered audiobook source before it's written to the DB.
      */
-    private suspend fun syncFolder(folderUri: Uri) {
+    private data class DiscoveredBook(
+        val sourceUri: String,       // Unique key: file URI for M4B, folder URI for MP3s
+        val files: List<DocumentFile> // The audio files that make up this book
+    )
+
+    /**
+     * Scan a root folder the user picked, discover all audiobooks inside,
+     * and reconcile with the database.
+     */
+    private suspend fun scanRootFolder(rootUri: Uri) {
         val context = getApplication<Application>()
-        val folder = DocumentFile.fromTreeUri(context, folderUri) ?: return
+        val rootFolder = DocumentFile.fromTreeUri(context, rootUri) ?: return
+        val rootUriStr = rootUri.toString()
 
-        val audioExtensions = setOf("mp3", "m4a", "m4b", "ogg", "opus", "flac", "wav", "aac")
+        // 1. Discover all audiobooks in this tree
+        val discovered = mutableListOf<DiscoveredBook>()
+        discoverAudiobooks(rootFolder, discovered)
 
-        val audioFiles = folder.listFiles()
-            .filter { file ->
-                file.isFile && file.name?.substringAfterLast('.')
-                    ?.lowercase() in audioExtensions
-            }
-            .sortedBy { it.name?.lowercase() }
+        // 2. Get existing books for this root
+        val existingBooks = audiobookDao.getAudiobooksByRootUri(rootUriStr)
+        val existingBySource = existingBooks.associateBy { it.folderUri }.toMutableMap()
 
-        // Look up existing audiobook for this folder
-        val existing = audiobookDao.getAudiobookByFolderUri(folderUri.toString())
-
-        if (audioFiles.isEmpty()) {
-            // Folder is now empty — remove the audiobook if it existed
-            existing?.let { audiobookDao.deleteAudiobook(it) }
-            return
+        // 3. Upsert each discovered book
+        val seenSourceUris = mutableSetOf<String>()
+        for (book in discovered) {
+            seenSourceUris.add(book.sourceUri)
+            upsertAudiobook(book, rootUriStr, existingBySource[book.sourceUri])
         }
 
-        // -- Metadata --
+        // 4. Remove books that no longer exist on disk
+        val toRemove = existingBooks.filter { it.folderUri !in seenSourceUris }
+        if (toRemove.isNotEmpty()) {
+            audiobookDao.deleteAudiobooks(toRemove)
+        }
+    }
+
+    /**
+     * Recursively discover audiobooks inside a folder.
+     *
+     * Rules:
+     *   - Each M4B/M4A file with embedded chapters → individual audiobook
+     *   - Any non-M4B audio files in the same folder → grouped as one audiobook
+     *   - Sub-folders → recurse
+     */
+    private fun discoverAudiobooks(
+        folder: DocumentFile,
+        results: MutableList<DiscoveredBook>
+    ) {
+        val children = folder.listFiles()
+        val audioFiles = children
+            .filter { it.isFile && it.name?.substringAfterLast('.')?.lowercase() in audioExtensions }
+            .sortedBy { it.name?.lowercase() }
+        val subFolders = children.filter { it.isDirectory }
+
+        // Separate M4B files from regular audio
+        val m4bFiles = audioFiles.filter {
+            it.name?.substringAfterLast('.')?.lowercase() in m4bExtensions
+        }
+        val regularFiles = audioFiles - m4bFiles.toSet()
+
+        // Each M4B → its own audiobook (keyed by file URI)
+        for (m4b in m4bFiles) {
+            results.add(DiscoveredBook(
+                sourceUri = m4b.uri.toString(),
+                files = listOf(m4b)
+            ))
+        }
+
+        // Regular audio files in this folder → one audiobook (keyed by folder URI)
+        if (regularFiles.isNotEmpty()) {
+            results.add(DiscoveredBook(
+                sourceUri = folder.uri.toString(),
+                files = regularFiles
+            ))
+        }
+
+        // Recurse into sub-folders
+        for (sub in subFolders) {
+            discoverAudiobooks(sub, results)
+        }
+    }
+
+    // ── Upsert a single audiobook ───────────────────────────────────────
+
+    private suspend fun upsertAudiobook(
+        discovered: DiscoveredBook,
+        rootUri: String,
+        existing: Audiobook?
+    ) {
+        val context = getApplication<Application>()
+        val files = discovered.files
+        if (files.isEmpty()) return
+
+        // -- Metadata from first file --
         var author = "Unknown Author"
         var metadataTitle: String? = null
         try {
             val retriever = MediaMetadataRetriever()
-            retriever.setDataSource(context, audioFiles.first().uri)
+            retriever.setDataSource(context, files.first().uri)
             author = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUMARTIST)
                 ?: retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)
                 ?: "Unknown Author"
@@ -89,25 +185,36 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             retriever.release()
         } catch (_: Exception) { }
 
-        val title = metadataTitle?.takeIf { it.isNotBlank() }
-            ?: folder.name ?: "Unknown Audiobook"
+        // For single M4B files, prefer the metadata title or filename
+        // For folders of MP3s, prefer the album metadata or folder name
+        val isSingleM4b = files.size == 1 &&
+                files.first().name?.substringAfterLast('.')?.lowercase() in m4bExtensions
+
+        val fallbackTitle = if (isSingleM4b) {
+            // Use filename without extension
+            files.first().name?.substringBeforeLast('.') ?: "Unknown Audiobook"
+        } else {
+            // Use parent folder name
+            files.first().parentFile?.name ?: "Unknown Audiobook"
+        }
+
+        val title = metadataTitle?.takeIf { it.isNotBlank() } ?: fallbackTitle
 
         // -- Upsert audiobook row --
         val audiobookId: Long
         if (existing != null) {
-            // Update metadata but keep progress fields
             audiobookDao.updateAudiobook(
-                existing.copy(title = title, author = author)
+                existing.copy(title = title, author = author, rootUri = rootUri)
             )
             audiobookId = existing.id
-            // Wipe old chapters — they'll be re-created below
             chapterDao.deleteChaptersForAudiobook(audiobookId)
         } else {
             audiobookId = audiobookDao.insertAudiobook(
                 Audiobook(
                     title = title,
                     author = author,
-                    folderUri = folderUri.toString()
+                    folderUri = discovered.sourceUri,
+                    rootUri = rootUri
                 )
             )
         }
@@ -117,7 +224,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         val chapters = mutableListOf<Chapter>()
         var chapterIndex = 0
 
-        for (file in audioFiles) {
+        for (file in files) {
             val ext = file.name?.substringAfterLast('.')?.lowercase()
             var fileDuration = 0L
             try {
@@ -129,7 +236,8 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 retriever.release()
             } catch (_: Exception) { }
 
-            val embeddedChapters = if (ext == "m4b" || ext == "m4a") {
+            // Try embedded chapters for M4B/M4A
+            val embeddedChapters = if (ext in m4bExtensions) {
                 M4bChapterParser.extractChapters(context, file.uri)
             } else {
                 emptyList()
@@ -180,17 +288,10 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
 
         chapterDao.insertChapters(chapters)
 
-        // Update total duration
         audiobookDao.updateAudiobook(
             audiobookDao.getAudiobookById(audiobookId)!!.copy(
                 totalDurationMs = totalDuration
             )
         )
-    }
-
-    fun deleteAudiobook(audiobook: Audiobook) {
-        viewModelScope.launch(Dispatchers.IO) {
-            audiobookDao.deleteAudiobook(audiobook)
-        }
     }
 }

@@ -13,7 +13,8 @@ data class Audiobook(
     val id: Long = 0,
     val title: String,
     val author: String = "Unknown Author",
-    val folderUri: String,            // SAF URI to the audiobook folder
+    val folderUri: String,            // Unique source: folder URI (MP3s) or file URI (M4B)
+    val rootUri: String = "",         // SAF root folder the user picked (for re-scanning)
     val coverUri: String? = null,     // Optional cover image URI
     val totalDurationMs: Long = 0,    // Total duration across all chapters
     val currentChapterIndex: Int = 0, // Last played chapter index
