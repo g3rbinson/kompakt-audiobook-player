@@ -53,6 +53,9 @@ class MainActivity : ComponentActivity() {
             playbackController.connect()
         }
 
+        // Sync all audiobook folders with what's on disk
+        libraryViewModel.syncAllAudiobooks()
+
         setContent {
             AudiobookTheme {
                 AppNavigation(

@@ -42,6 +42,12 @@ interface AudiobookDao {
     @Query("UPDATE audiobooks SET isCompleted = :completed WHERE id = :audiobookId")
     suspend fun markCompleted(audiobookId: Long, completed: Boolean)
 
+    @Query("SELECT * FROM audiobooks WHERE folderUri = :folderUri LIMIT 1")
+    suspend fun getAudiobookByFolderUri(folderUri: String): Audiobook?
+
+    @Query("SELECT * FROM audiobooks")
+    suspend fun getAllAudiobooksSync(): List<Audiobook>
+
     @Delete
     suspend fun deleteAudiobook(audiobook: Audiobook)
 }

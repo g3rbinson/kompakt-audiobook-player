@@ -262,7 +262,7 @@ fun ChapterListScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     TextMMD(
-                        text = "${index + 1}. ${chapter.title}",
+                        text = chapter.title,
                         fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
