@@ -74,7 +74,7 @@ fun PlayerScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 20.dp, vertical = 12.dp),
+                .padding(horizontal = 24.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
             // Chapter info
@@ -85,12 +85,12 @@ fun PlayerScreen(
                 totalChapters = chapters.size
             )
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
             // Progress bar
             ProgressSection(playbackState = playbackState)
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
             // Playback controls
             PlaybackControls(
@@ -102,7 +102,7 @@ fun PlayerScreen(
                 onPreviousChapter = viewModel::previousChapter
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
             // Bottom toolbar: Speed, Sleep Timer, Bookmark, Chapters
             BottomToolbar(
@@ -128,14 +128,14 @@ private fun ChapterInfo(
             text = "Chapter $chapterNumber of $totalChapters",
             color = Color.Gray
         )
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(8.dp))
         TextMMD(
             text = chapterTitle,
             fontWeight = FontWeight.SemiBold,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis
         )
-        Spacer(modifier = Modifier.height(2.dp))
+        Spacer(modifier = Modifier.height(6.dp))
         TextMMD(
             text = author,
             color = Color.DarkGray
@@ -150,7 +150,7 @@ private fun ProgressSection(playbackState: PlaybackState) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(6.dp)
+                .height(8.dp)
                 .background(Color.LightGray)
         ) {
             Box(
@@ -160,7 +160,7 @@ private fun ProgressSection(playbackState: PlaybackState) {
                     .background(Color.Black)
             )
         }
-        Spacer(modifier = Modifier.height(6.dp))
+        Spacer(modifier = Modifier.height(10.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
@@ -181,24 +181,36 @@ private fun PlaybackControls(
     onPreviousChapter: () -> Unit
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp),
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically
     ) {
         // Previous chapter
-        IconButton(onClick = onPreviousChapter) {
+        ButtonMMD(
+            onClick = onPreviousChapter,
+            modifier = Modifier.size(56.dp)
+        ) {
             TextMMD("⏮", fontWeight = FontWeight.Bold)
         }
 
+        Spacer(modifier = Modifier.width(8.dp))
+
         // Skip back 15s
-        IconButton(onClick = onSkipBackward) {
+        ButtonMMD(
+            onClick = onSkipBackward,
+            modifier = Modifier.size(56.dp)
+        ) {
             TextMMD("−15s", fontWeight = FontWeight.Medium)
         }
+
+        Spacer(modifier = Modifier.width(8.dp))
 
         // Play / Pause — larger tap target
         ButtonMMD(
             onClick = onPlayPause,
-            modifier = Modifier.size(64.dp)
+            modifier = Modifier.size(72.dp)
         ) {
             TextMMD(
                 text = if (isPlaying) "⏸" else "▶",
@@ -206,13 +218,23 @@ private fun PlaybackControls(
             )
         }
 
+        Spacer(modifier = Modifier.width(8.dp))
+
         // Skip forward 30s
-        IconButton(onClick = onSkipForward) {
+        ButtonMMD(
+            onClick = onSkipForward,
+            modifier = Modifier.size(56.dp)
+        ) {
             TextMMD("+30s", fontWeight = FontWeight.Medium)
         }
 
+        Spacer(modifier = Modifier.width(8.dp))
+
         // Next chapter
-        IconButton(onClick = onNextChapter) {
+        ButtonMMD(
+            onClick = onNextChapter,
+            modifier = Modifier.size(56.dp)
+        ) {
             TextMMD("⏭", fontWeight = FontWeight.Bold)
         }
     }
@@ -229,16 +251,28 @@ private fun BottomToolbar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp),
+            .padding(vertical = 12.dp, horizontal = 4.dp),
         horizontalArrangement = Arrangement.SpaceEvenly
     ) {
         // Speed
-        ButtonMMD(onClick = onSpeedClick) {
+        ButtonMMD(
+            onClick = onSpeedClick,
+            modifier = Modifier
+                .weight(1f)
+                .height(48.dp)
+                .padding(horizontal = 4.dp)
+        ) {
             TextMMD(formatSpeed(playbackState.playbackSpeed))
         }
 
         // Sleep timer
-        ButtonMMD(onClick = onSleepTimerClick) {
+        ButtonMMD(
+            onClick = onSleepTimerClick,
+            modifier = Modifier
+                .weight(1f)
+                .height(48.dp)
+                .padding(horizontal = 4.dp)
+        ) {
             val label = playbackState.sleepTimerRemainingMs?.let { ms ->
                 "Sleep ${formatDuration(ms)}"
             } ?: "Sleep"
@@ -246,12 +280,24 @@ private fun BottomToolbar(
         }
 
         // Bookmark
-        ButtonMMD(onClick = onBookmarkClick) {
+        ButtonMMD(
+            onClick = onBookmarkClick,
+            modifier = Modifier
+                .weight(1f)
+                .height(48.dp)
+                .padding(horizontal = 4.dp)
+        ) {
             TextMMD("Bookmark")
         }
 
         // Chapters
-        ButtonMMD(onClick = onChaptersClick) {
+        ButtonMMD(
+            onClick = onChaptersClick,
+            modifier = Modifier
+                .weight(1f)
+                .height(48.dp)
+                .padding(horizontal = 4.dp)
+        ) {
             TextMMD("Chapters")
         }
     }
@@ -283,7 +329,7 @@ fun ChapterListScreen(
 
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(vertical = 8.dp)
+            contentPadding = PaddingValues(vertical = 12.dp)
         ) {
             itemsIndexed(chapters) { index, chapter ->
                 val isActive = index == currentChapterIndex
@@ -292,7 +338,7 @@ fun ChapterListScreen(
                         .fillMaxWidth()
                         .clickable { onChapterClick(index) }
                         .background(if (isActive) Color(0xFFE0E0E0) else Color.White)
-                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                        .padding(horizontal = 20.dp, vertical = 18.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -304,7 +350,7 @@ fun ChapterListScreen(
                             overflow = TextOverflow.Ellipsis
                         )
                     }
-                    Spacer(modifier = Modifier.width(12.dp))
+                    Spacer(modifier = Modifier.width(16.dp))
                     TextMMD(
                         text = formatDuration(chapter.durationMs),
                         color = Color.Gray,
@@ -315,7 +361,7 @@ fun ChapterListScreen(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp)
+                        .padding(horizontal = 20.dp)
                         .height(1.dp)
                         .background(Color.LightGray)
                 )
