@@ -34,6 +34,7 @@ class PlaybackController(context: Context) {
 
     private var currentChapters: List<Chapter> = emptyList()
     private var currentAudiobookId: Long? = null
+    private var isSingleFileBook: Boolean = false
 
     /** Connect to the playback service. Call from Activity onCreate. */
     suspend fun connect() {
@@ -63,6 +64,7 @@ class PlaybackController(context: Context) {
 
     /**
      * Load an audiobook and start playback from its saved position.
+     * Handles both multi-file audiobooks and single-file M4B with embedded chapters.
      */
     fun loadAudiobook(audiobookWithChapters: AudiobookWithChapters) {
         val controller = mediaController ?: return
@@ -72,24 +74,53 @@ class PlaybackController(context: Context) {
         currentChapters = chapters
         currentAudiobookId = audiobook.id
 
-        val mediaItems = chapters.map { chapter ->
-            MediaItem.Builder()
-                .setUri(Uri.parse(chapter.fileUri))
-                .setMediaId("${audiobook.id}_${chapter.index}")
+        // Detect if this is a single-file audiobook (M4B with embedded chapters)
+        val distinctFiles = chapters.map { it.fileUri }.distinct()
+        isSingleFileBook = distinctFiles.size == 1 && chapters.size > 1
+
+        if (isSingleFileBook) {
+            // Single M4B file — load as one MediaItem, handle chapters via seeking
+            val mediaItem = MediaItem.Builder()
+                .setUri(Uri.parse(chapters.first().fileUri))
+                .setMediaId("${audiobook.id}_m4b")
                 .setMediaMetadata(
                     MediaMetadata.Builder()
-                        .setTitle(chapter.title)
+                        .setTitle(audiobook.title)
                         .setArtist(audiobook.author)
                         .setAlbumTitle(audiobook.title)
-                        .setTrackNumber(chapter.index + 1)
                         .build()
                 )
                 .build()
-        }
 
-        controller.setMediaItems(mediaItems, audiobook.currentChapterIndex, audiobook.currentPositionMs)
-        controller.prepare()
-        controller.play()
+            // Calculate the absolute seek position from saved chapter + position
+            val savedChapter = chapters.getOrNull(audiobook.currentChapterIndex)
+            val seekMs = (savedChapter?.startTimeMs ?: 0) + audiobook.currentPositionMs
+
+            controller.setMediaItem(mediaItem)
+            controller.prepare()
+            controller.seekTo(seekMs)
+            controller.play()
+        } else {
+            // Multi-file audiobook — one MediaItem per chapter
+            val mediaItems = chapters.map { chapter ->
+                MediaItem.Builder()
+                    .setUri(Uri.parse(chapter.fileUri))
+                    .setMediaId("${audiobook.id}_${chapter.index}")
+                    .setMediaMetadata(
+                        MediaMetadata.Builder()
+                            .setTitle(chapter.title)
+                            .setArtist(audiobook.author)
+                            .setAlbumTitle(audiobook.title)
+                            .setTrackNumber(chapter.index + 1)
+                            .build()
+                    )
+                    .build()
+            }
+
+            controller.setMediaItems(mediaItems, audiobook.currentChapterIndex, audiobook.currentPositionMs)
+            controller.prepare()
+            controller.play()
+        }
     }
 
     fun play() { mediaController?.play() }
@@ -119,15 +150,39 @@ class PlaybackController(context: Context) {
     }
 
     fun seekToChapter(index: Int) {
-        mediaController?.let {
-            if (index in 0 until it.mediaItemCount) {
-                it.seekTo(index, 0)
+        if (isSingleFileBook) {
+            val chapter = currentChapters.getOrNull(index) ?: return
+            mediaController?.seekTo(chapter.startTimeMs)
+        } else {
+            mediaController?.let {
+                if (index in 0 until it.mediaItemCount) {
+                    it.seekTo(index, 0)
+                }
             }
         }
     }
 
-    fun nextChapter() { mediaController?.seekToNextMediaItem() }
-    fun previousChapter() { mediaController?.seekToPreviousMediaItem() }
+    fun nextChapter() {
+        if (isSingleFileBook) {
+            val currentIdx = getCurrentChapterIndex()
+            if (currentIdx < currentChapters.size - 1) {
+                seekToChapter(currentIdx + 1)
+            }
+        } else {
+            mediaController?.seekToNextMediaItem()
+        }
+    }
+
+    fun previousChapter() {
+        if (isSingleFileBook) {
+            val currentIdx = getCurrentChapterIndex()
+            if (currentIdx > 0) {
+                seekToChapter(currentIdx - 1)
+            }
+        } else {
+            mediaController?.seekToPreviousMediaItem()
+        }
+    }
 
     fun setPlaybackSpeed(speed: Float) {
         mediaController?.setPlaybackSpeed(speed)
@@ -155,10 +210,30 @@ class PlaybackController(context: Context) {
         _playbackState.value = _playbackState.value.copy(sleepTimerRemainingMs = null)
     }
 
-    /** Get the current progress as (chapterIndex, positionMs). */
+    /** Get the current progress as (chapterIndex, positionMs within that chapter). */
     fun getCurrentProgress(): Pair<Int, Long> {
         val controller = mediaController ?: return Pair(0, 0)
+        if (isSingleFileBook) {
+            val absPos = controller.currentPosition
+            val chapterIdx = getCurrentChapterIndex()
+            val chapter = currentChapters.getOrNull(chapterIdx)
+            val posInChapter = if (chapter != null) absPos - chapter.startTimeMs else absPos
+            return Pair(chapterIdx, posInChapter.coerceAtLeast(0))
+        }
         return Pair(controller.currentMediaItemIndex, controller.currentPosition)
+    }
+
+    /**
+     * For single-file M4B books, determine which chapter the absolute position falls in.
+     */
+    private fun getCurrentChapterIndex(): Int {
+        val controller = mediaController ?: return 0
+        if (!isSingleFileBook) return controller.currentMediaItemIndex
+        val absPos = controller.currentPosition
+        for (i in currentChapters.indices.reversed()) {
+            if (absPos >= currentChapters[i].startTimeMs) return i
+        }
+        return 0
     }
 
     // -- Internal --
@@ -171,15 +246,33 @@ class PlaybackController(context: Context) {
 
     private fun syncState() {
         val controller = mediaController ?: return
-        _playbackState.value = PlaybackState(
-            isPlaying = controller.isPlaying,
-            currentPositionMs = controller.currentPosition,
-            durationMs = controller.duration.coerceAtLeast(0),
-            currentChapterIndex = controller.currentMediaItemIndex,
-            audiobookId = currentAudiobookId,
-            playbackSpeed = controller.playbackParameters.speed,
-            sleepTimerRemainingMs = _playbackState.value.sleepTimerRemainingMs
-        )
+        if (isSingleFileBook) {
+            val absPos = controller.currentPosition
+            val chapterIdx = getCurrentChapterIndex()
+            val chapter = currentChapters.getOrNull(chapterIdx)
+            val posInChapter = if (chapter != null) absPos - chapter.startTimeMs else absPos
+            val chapterDuration = chapter?.durationMs ?: controller.duration.coerceAtLeast(0)
+
+            _playbackState.value = PlaybackState(
+                isPlaying = controller.isPlaying,
+                currentPositionMs = posInChapter.coerceAtLeast(0),
+                durationMs = chapterDuration,
+                currentChapterIndex = chapterIdx,
+                audiobookId = currentAudiobookId,
+                playbackSpeed = controller.playbackParameters.speed,
+                sleepTimerRemainingMs = _playbackState.value.sleepTimerRemainingMs
+            )
+        } else {
+            _playbackState.value = PlaybackState(
+                isPlaying = controller.isPlaying,
+                currentPositionMs = controller.currentPosition,
+                durationMs = controller.duration.coerceAtLeast(0),
+                currentChapterIndex = controller.currentMediaItemIndex,
+                audiobookId = currentAudiobookId,
+                playbackSpeed = controller.playbackParameters.speed,
+                sleepTimerRemainingMs = _playbackState.value.sleepTimerRemainingMs
+            )
+        }
     }
 
     private fun startPositionUpdates() {

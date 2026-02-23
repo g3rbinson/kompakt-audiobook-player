@@ -28,5 +28,6 @@ data class Chapter(
     val fileUri: String,        // URI to the audio file
     val index: Int,             // Order within the audiobook
     val durationMs: Long = 0,
-    val fileName: String
+    val fileName: String,
+    val startTimeMs: Long = 0   // Offset within file (for M4B embedded chapters)
 )

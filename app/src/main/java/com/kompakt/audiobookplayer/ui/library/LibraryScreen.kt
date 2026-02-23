@@ -16,18 +16,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.kompakt.audiobookplayer.data.Audiobook
 import com.kompakt.audiobookplayer.ui.util.formatDuration
-import com.mudita.mmd.components.top_app_bar.TopAppBarMMD
 import com.mudita.mmd.components.buttons.ButtonMMD
 import com.mudita.mmd.components.text.TextMMD
 
 /**
- * Library screen — shows all imported audiobooks.
- *
- * Designed for the Kompakt's 800×480 E Ink display:
- * - High contrast black-on-white
- * - Large tap targets
- * - No animations or color gradients
- * - Minimal recompositions to reduce E Ink ghosting
+ * Minimalist library screen for the Kompakt 800×480 E Ink display.
+ * High contrast, large tap targets, no animations.
  */
 @Composable
 fun LibraryScreen(
@@ -42,44 +36,44 @@ fun LibraryScreen(
             .fillMaxSize()
             .background(Color.White)
     ) {
-        // Top bar
-        TopAppBarMMD(
-            title = { TextMMD("Audiobook Library", fontWeight = FontWeight.Bold) }
+        // Header row
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp, vertical = 16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TextMMD("Library", fontWeight = FontWeight.Bold)
+            ButtonMMD(
+                onClick = onAddClick,
+                modifier = Modifier.height(44.dp)
+            ) {
+                TextMMD("+ Add")
+            }
+        }
+
+        // Divider
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(Color.LightGray)
         )
 
         if (audiobooks.isEmpty()) {
-            // Empty state
             EmptyLibrary(onAddClick = onAddClick)
         } else {
-            // Audiobook list
             LazyColumn(
                 modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
-                contentPadding = PaddingValues(vertical = 12.dp)
+                    .fillMaxSize(),
+                contentPadding = PaddingValues(vertical = 4.dp)
             ) {
                 items(audiobooks, key = { it.id }) { audiobook ->
                     AudiobookListItem(
                         audiobook = audiobook,
                         onClick = { onAudiobookClick(audiobook.id) }
                     )
-                }
-            }
-
-            // Add button at bottom
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 20.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                ButtonMMD(
-                    onClick = onAddClick,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(52.dp)
-                ) {
-                    TextMMD("+ Add Audiobook")
                 }
             }
         }
@@ -91,7 +85,7 @@ private fun EmptyLibrary(onAddClick: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(32.dp),
+            .padding(48.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -99,19 +93,10 @@ private fun EmptyLibrary(onAddClick: () -> Unit) {
             text = "No audiobooks yet",
             fontWeight = FontWeight.Medium
         )
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(12.dp))
         TextMMD(
-            text = "Add a folder containing audio files to get started."
+            text = "Tap + Add to select a folder."
         )
-        Spacer(modifier = Modifier.height(32.dp))
-        ButtonMMD(
-            onClick = onAddClick,
-            modifier = Modifier
-                .fillMaxWidth(0.7f)
-                .height(52.dp)
-        ) {
-            TextMMD("+ Add Audiobook")
-        }
     }
 }
 
@@ -124,47 +109,59 @@ private fun AudiobookListItem(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 20.dp, vertical = 16.dp)
+            .padding(horizontal = 24.dp, vertical = 14.dp)
     ) {
-        TextMMD(
-            text = audiobook.title,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        TextMMD(
-            text = audiobook.author,
-            color = Color.DarkGray,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // Progress indicator
+        // Title and duration on one row
         Row(
+            modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
-            modifier = Modifier.fillMaxWidth()
+            verticalAlignment = Alignment.Top
         ) {
-            val status = when {
-                audiobook.isCompleted -> "Completed"
-                audiobook.lastPlayedAt > 0 -> "In progress"
-                else -> "Not started"
-            }
-            TextMMD(text = status, color = Color.Gray)
+            TextMMD(
+                text = audiobook.title,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+            Spacer(modifier = Modifier.width(12.dp))
             TextMMD(
                 text = formatDuration(audiobook.totalDurationMs),
                 color = Color.Gray
             )
         }
 
-        // Simple progress bar — E Ink friendly (no animation)
+        Spacer(modifier = Modifier.height(4.dp))
+
+        // Author and status
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            TextMMD(
+                text = audiobook.author,
+                color = Color.DarkGray,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+            val status = when {
+                audiobook.isCompleted -> "Done"
+                audiobook.lastPlayedAt > 0 -> "In progress"
+                else -> ""
+            }
+            if (status.isNotEmpty()) {
+                TextMMD(text = status, color = Color.Gray)
+            }
+        }
+
+        // Progress bar — only if in progress
         if (audiobook.lastPlayedAt > 0 && !audiobook.isCompleted && audiobook.totalDurationMs > 0) {
             Spacer(modifier = Modifier.height(8.dp))
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(6.dp)
+                    .height(4.dp)
                     .background(Color.LightGray)
             ) {
                 val progress = audiobook.currentPositionMs.toFloat() / audiobook.totalDurationMs
@@ -176,14 +173,14 @@ private fun AudiobookListItem(
                 )
             }
         }
-
-        // Divider
-        Spacer(modifier = Modifier.height(16.dp))
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(1.dp)
-                .background(Color.LightGray)
-        )
     }
+
+    // Divider
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp)
+            .height(1.dp)
+            .background(Color(0xFFEEEEEE))
+    )
 }
