@@ -9,6 +9,7 @@ import com.kompakt.audiobookplayer.playback.PlaybackState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 
 class PlayerViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -38,18 +39,30 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     /**
      * Load an audiobook by ID and begin playback.
+     * Reads the saved position from the database so playback resumes
+     * where the user left off.
      */
     fun loadAudiobook(audiobookId: Long) {
         viewModelScope.launch(Dispatchers.IO) {
             val audiobookWithChapters = audiobookDao.getAudiobookWithChapters(audiobookId)
                 ?: return@launch
 
-            _audiobook.value = audiobookWithChapters.audiobook
-            _chapters.value = audiobookWithChapters.chapters.sortedBy { it.index }
+            // Re-read the audiobook row to get the latest saved position
+            // (it may have been updated by progress saving since the Flow snapshot)
+            val freshAudiobook = audiobookDao.getAudiobookById(audiobookId)
+                ?: audiobookWithChapters.audiobook
+
+            val withFreshProgress = AudiobookWithChapters(
+                audiobook = freshAudiobook,
+                chapters = audiobookWithChapters.chapters
+            )
+
+            _audiobook.value = freshAudiobook
+            _chapters.value = withFreshProgress.chapters.sortedBy { it.index }
 
             // Load into player on Main thread
             launch(Dispatchers.Main) {
-                playbackController.loadAudiobook(audiobookWithChapters)
+                playbackController.loadAudiobook(withFreshProgress)
             }
         }
     }
@@ -101,8 +114,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     /**
      * Periodically save playback progress to the database.
-     * Runs every 10 seconds to avoid excessive writes while still
-     * preserving position if the app is killed.
+     * Saves whenever chapter changes or position moves by more than 3 seconds.
      */
     private fun startProgressSaving() {
         progressSaveJob?.cancel()
@@ -111,7 +123,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 .filter { it.audiobookId != null }
                 .distinctUntilChanged { old, new ->
                     old.currentChapterIndex == new.currentChapterIndex &&
-                            kotlin.math.abs(old.currentPositionMs - new.currentPositionMs) < 5000
+                            kotlin.math.abs(old.currentPositionMs - new.currentPositionMs) < 3000
                 }
                 .collect { state ->
                     state.audiobookId?.let { id ->
@@ -125,16 +137,36 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    /** Save progress immediately (e.g., when leaving the player screen). */
+    /** Save progress immediately (e.g., when leaving the player screen or app going to background). */
     fun saveProgressNow() {
-        val state = playbackState.value
-        val id = state.audiobookId ?: return
+        val (chapterIndex, positionMs) = playbackController.getCurrentProgress()
+        val id = _audiobook.value?.id ?: return
         viewModelScope.launch(Dispatchers.IO) {
             audiobookDao.updateProgress(
                 audiobookId = id,
-                chapterIndex = state.currentChapterIndex,
-                positionMs = state.currentPositionMs
+                chapterIndex = chapterIndex,
+                positionMs = positionMs
             )
+        }
+    }
+
+    /**
+     * Blocking save for use in onDestroy where viewModelScope may be cancelled.
+     * Ensures progress is written to disk before the process exits.
+     */
+    fun saveProgressBlocking() {
+        val (chapterIndex, positionMs) = playbackController.getCurrentProgress()
+        val id = _audiobook.value?.id ?: return
+        try {
+            runBlocking(Dispatchers.IO) {
+                audiobookDao.updateProgress(
+                    audiobookId = id,
+                    chapterIndex = chapterIndex,
+                    positionMs = positionMs
+                )
+            }
+        } catch (_: Exception) {
+            // If blocked too long or cancelled, at least we tried
         }
     }
 }

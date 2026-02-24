@@ -67,9 +67,16 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onStop() {
+        super.onStop()
+        // Save progress every time the app goes to background
+        playerViewModel.saveProgressNow()
+    }
+
     override fun onDestroy() {
         super.onDestroy()
-        playerViewModel.saveProgressNow()
+        // Blocking save to guarantee progress is persisted before process death
+        playerViewModel.saveProgressBlocking()
         playbackController.disconnect()
     }
 }
@@ -115,17 +122,28 @@ private fun AppNavigation(
         composable(
             route = "player/{audiobookId}",
             arguments = listOf(navArgument("audiobookId") { type = NavType.LongType })
-        ) {
-            PlayerScreen(
-                viewModel = playerViewModel,
-                onBackClick = {
-                    playerViewModel.saveProgressNow()
-                    navController.popBackStack()
-                },
-                onChaptersClick = {
-                    navController.navigate("chapters")
+        ) { backStackEntry ->
+            val audiobookId = backStackEntry.arguments?.getLong("audiobookId") ?: 0L
+            val loadedBook = currentAudiobook
+
+            // If nothing is loaded (cold start restored stale back-stack),
+            // go back to library instead of showing an empty player.
+            if (loadedBook == null || loadedBook.id != audiobookId) {
+                LaunchedEffect(audiobookId) {
+                    navController.popBackStack("library", inclusive = false)
                 }
-            )
+            } else {
+                PlayerScreen(
+                    viewModel = playerViewModel,
+                    onBackClick = {
+                        playerViewModel.saveProgressNow()
+                        navController.popBackStack()
+                    },
+                    onChaptersClick = {
+                        navController.navigate("chapters")
+                    }
+                )
+            }
         }
 
         composable("chapters") {
