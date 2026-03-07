@@ -9,7 +9,6 @@ import com.kompakt.audiobookplayer.playback.PlaybackState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 
 class PlayerViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -30,11 +29,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     val playbackState: StateFlow<PlaybackState>
         get() = playbackController.playbackState
 
-    private var progressSaveJob: kotlinx.coroutines.Job? = null
-
     fun initController(controller: PlaybackController) {
         playbackController = controller
-        startProgressSaving()
     }
 
     /**
@@ -48,7 +44,6 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 ?: return@launch
 
             // Re-read the audiobook row to get the latest saved position
-            // (it may have been updated by progress saving since the Flow snapshot)
             val freshAudiobook = audiobookDao.getAudiobookById(audiobookId)
                 ?: audiobookWithChapters.audiobook
 
@@ -100,6 +95,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     /** Add a bookmark at the current position. */
     fun addBookmark() {
         val (chapterIndex, positionMs) = playbackController.getCurrentProgress()
+        if (chapterIndex < 0) return
         val bookId = _audiobook.value?.id ?: return
         viewModelScope.launch(Dispatchers.IO) {
             bookmarkDao.insertBookmark(
@@ -112,61 +108,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    /**
-     * Periodically save playback progress to the database.
-     * Saves whenever chapter changes or position moves by more than 3 seconds.
-     */
-    private fun startProgressSaving() {
-        progressSaveJob?.cancel()
-        progressSaveJob = viewModelScope.launch(Dispatchers.IO) {
-            playbackController.playbackState
-                .filter { it.audiobookId != null }
-                .distinctUntilChanged { old, new ->
-                    old.currentChapterIndex == new.currentChapterIndex &&
-                            kotlin.math.abs(old.currentPositionMs - new.currentPositionMs) < 3000
-                }
-                .collect { state ->
-                    state.audiobookId?.let { id ->
-                        audiobookDao.updateProgress(
-                            audiobookId = id,
-                            chapterIndex = state.currentChapterIndex,
-                            positionMs = state.currentPositionMs
-                        )
-                    }
-                }
-        }
-    }
-
-    /** Save progress immediately (e.g., when leaving the player screen or app going to background). */
+    /** Trigger an immediate progress save (e.g., navigating away from player). */
     fun saveProgressNow() {
-        val (chapterIndex, positionMs) = playbackController.getCurrentProgress()
-        val id = _audiobook.value?.id ?: return
-        viewModelScope.launch(Dispatchers.IO) {
-            audiobookDao.updateProgress(
-                audiobookId = id,
-                chapterIndex = chapterIndex,
-                positionMs = positionMs
-            )
-        }
-    }
-
-    /**
-     * Blocking save for use in onDestroy where viewModelScope may be cancelled.
-     * Ensures progress is written to disk before the process exits.
-     */
-    fun saveProgressBlocking() {
-        val (chapterIndex, positionMs) = playbackController.getCurrentProgress()
-        val id = _audiobook.value?.id ?: return
-        try {
-            runBlocking(Dispatchers.IO) {
-                audiobookDao.updateProgress(
-                    audiobookId = id,
-                    chapterIndex = chapterIndex,
-                    positionMs = positionMs
-                )
-            }
-        } catch (_: Exception) {
-            // If blocked too long or cancelled, at least we tried
-        }
+        playbackController.saveProgressBlocking()
     }
 }

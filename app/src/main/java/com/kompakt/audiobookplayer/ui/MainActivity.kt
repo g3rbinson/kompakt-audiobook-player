@@ -70,13 +70,11 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         super.onStop()
         // Save progress every time the app goes to background
-        playerViewModel.saveProgressNow()
+        playbackController.saveProgressBlocking()
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        // Blocking save to guarantee progress is persisted before process death
-        playerViewModel.saveProgressBlocking()
         playbackController.disconnect()
     }
 }
